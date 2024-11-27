@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Control Lámpara/Radio</title>
+    <style>
+        body {
+            font-family: "Calibri";
+            text-align: center;
+            background-color: rgba(128, 128, 128, 0.589);
+        }
+        h1, h2 {
+            color: rgb(155, 11, 11);
+            font-size: 15px;
+            margin-bottom: 10px; /* Ajusta el espacio debajo del título */
+        }
+        .relay-container {
+            display: none; /* Ocultar los controles inicialmente */
+            flex-direction: column;
+            align-items: center;
+            gap: 10px; /* Reducir el espacio entre botones */
+            margin-top: 10px;
+        }
+        .relay {
+            text-align: center;
+        }
+        .btn {
+            display: inline-block;
+            text-decoration: none;
+            background: #b60303;
+            color: rgba(255, 255, 255, 0.80);
+            font-weight: bold;
+            font: 50px Arial, sans-serif;
+            width: 100px;
+            height: 100px;
+            line-height: 100px;
+            border-radius: 50%;
+            margin: 6px;
+            text-align: center;
+            vertical-align: middle;
+            overflow: hidden;
+            box-shadow: 0px 0px 0px 8px #0813018e;
+            border: solid 2px rgba(247, 243, 7, 0.836);
+            transition: 0.4s;
+            cursor: pointer;
+        }
+        .on {
+            background-color: #4CAF50;
+            color: white;
+        }
+        .off {
+            background-color: #FF0000;
+            color: white;
+        }
+        .status {
+            font-weight: bold;
+            margin-top: 10px;
+            font-size: 0.9em;
+        }
+        .timer {
+            font-size: 18px;
+            margin-top: 10px;
+            color: #666;
+        }
+        /* Estilos para el formulario de inicio de sesión */
+        .login-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-top: 30px;
+        }
+        .login-form {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+        .login-form input {
+            margin-bottom: 10px;
+            padding: 10px;
+            font-size: 16px;
+            width: 200px;
+        }
+        .login-form button {
+            padding: 10px 20px;
+            font-size: 16px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        .error {
+            color: red;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Control Lámpara/Radio</h1>
+
+    <!-- Contenedor de inicio de sesión -->
+    <div class="login-container">
+        <form class="login-form" id="loginForm">
+            <input type="text" id="username" placeholder="Usuario">
+            <input type="password" id="password" placeholder="Contraseña">
+            <button type="submit">Iniciar Sesión</button>
+            <div class="error" id="errorMessage"></div>
+        </form>
+    </div>
+
+    <!-- Temporizador -->
+    <div class="timer">
+        Próxima actualización en: <span id="countdown">15</span> segundos
+    </div>
+
+    <!-- Controles -->
+    <div class="relay-container" id="relayContainer">
+        <!-- GPIO23 -->
+        <div class="relay">
+            <h2>LÁMPARA (GPIO23)</h2>
+            <div id="status1" class="status">Estado: Cargando...</div>
+            <a href="#" id="button1" class="btn off" onclick="toggleRelay(1)">1</a>
+        </div>
+        <!-- GPIO22 -->
+        <div class="relay">
+            <h2>RADIO (GPIO22)</h2>
+            <div id="status2" class="status">Estado: Cargando...</div>
+            <a href="#" id="button2" class="btn off" onclick="toggleRelay(2)">1</a>
+        </div>
+    </div>
+
+    <script>
+        const apiKey = '06ZI6B9DRMFBZOBJ'; // Reemplaza con tu API Key
+        const channelId = '2755869'; // Reemplaza con tu ID de canal
+        let currentStates = { field1: '0', field2: '0' };
+        let countdown = 15;
+        let countdownInterval;
+
+        const loginForm = document.getElementById('loginForm');
+        const relayContainer = document.getElementById('relayContainer');
+        const errorMessage = document.getElementById('errorMessage');
+
+        // Validar inicio de sesión
+        loginForm.addEventListener('submit', function(event) {
+            event.preventDefault();
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            
+            // Credenciales de prueba
+            const validUsername = 'admin';
+            const validPassword = '1234';
+
+            if (username === validUsername && password === validPassword) {
+                loginForm.style.display = 'none';
+                relayContainer.style.display = 'flex';
+                startCountdown();
+            } else {
+                errorMessage.textContent = 'Usuario o contraseña incorrectos';
+            }
+        });
+
+        // Actualizar el estado de los botones
+        function updateStatus() {
+            fetch(`https://api.thingspeak.com/channels/${channelId}/feeds.json?api_key=${apiKey}&results=1`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.feeds.length > 0) {
+                        currentStates.field1 = data.feeds[0].field1 || '0';
+                        currentStates.field2 = data.feeds[0].field2 || '0';
+
+                        updateButton(1, currentStates.field1 === '1');
+                        updateButton(2, currentStates.field2 === '1');
+                    }
+                })
+                .catch(error => console.error("Error al obtener los estados:", error));
+        }
+
+        // Alternar relé y reiniciar temporizador
+        function toggleRelay(relayNumber) {
+            const fieldName = `field${relayNumber}`;
+            const newState = currentStates[fieldName] === '1' ? '0' : '1';
+            
+            const updatedState = {
+                field1: relayNumber === 1 ? newState : currentStates.field1,
+                field2: relayNumber === 2 ? newState : currentStates.field2
+            };
+
+            fetch(`https://api.thingspeak.com/update?api_key=${apiKey}&field1=${updatedState.field1}&field2=${updatedState.field2}`)
+                .then(response => response.text())
+                .then(() => {
+                    currentStates = updatedState;
+                    updateButton(relayNumber, newState === '1');
+                    startCountdown(); // Inicia el temporizador solo al interactuar con el GPIO
+                })
+                .catch(error => console.error(`Error al actualizar el relé ${relayNumber}:`, error));
+        }
+
+        // Actualizar visualmente el estado del botón
+        function updateButton(relayNumber, isOn) {
+            const button = document.getElementById(`button${relayNumber}`);
+            const status = document.getElementById(`status${relayNumber}`);
+            button.textContent = isOn ? "0" : "1";
+            button.className = isOn ? "btn on" : "btn off";
+            status.textContent = `Estado: ${isOn ? "Encendido.1" : "Apagado.0"}`;
+        }
+
+        // Iniciar temporizador
+        function startCountdown() {
+            clearInterval(countdownInterval); // Detiene cualquier temporizador anterior
+            countdown = 15; // Reinicia el temporizador a 15 segundos
+            document.getElementById("countdown").textContent = countdown;
+
+            countdownInterval = setInterval(() => {
+                countdown--;
+                document.getElementById("countdown").textContent = countdown;
+
+                if (countdown <= 0) {
+                    clearInterval(countdownInterval);
+                    updateStatus(); // Actualizar estado cuando el temporizador llegue a 0
+                }
+            }, 1000);
+        }
+
+        // Cargar estados al iniciar
+        updateStatus();
+    </script>
+</body>
+</html>
